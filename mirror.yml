@@ -11,9 +11,7 @@ source:
   # pre-release tags like v11.0.0-alpha.0 (also gated by skip_prereleases).
   tag_pattern: "^v(?P<version>\\d+\\.\\d+\\.\\d+)$"
 
-# Pass 1 — Linux only. darwin + windows staged below for Pass 2/3.
-#
-# pnpm v11 ships archives: a `pnpm` binary at the archive ROOT next to a
+# All platforms live. pnpm v11 ships archives: a `pnpm` binary at the archive ROOT next to a
 # sibling `dist/` directory the binary loads at runtime (the launcher resolves
 # dist/ relative to itself). Both must install together — strip_components: 0
 # unpacks the whole tree into ${installPath}, so PATH=${installPath} exposes
@@ -31,16 +29,15 @@ assets:
     - "^pnpm-linux-x64\\.tar\\.gz$"
   linux/arm64:
     - "^pnpm-linux-arm64\\.tar\\.gz$"
-  # --- Pass 2: darwin (arm64 only — Intel/darwin-x64 was dropped at v11.1.0,
-  #     which is why versions.min is 11.1.0; declaring darwin/amd64 would
-  #     silently resolve 0 assets and skip the platform undetected). ---
-  # darwin/arm64:
-  #   - "^pnpm-darwin-arm64\\.tar\\.gz$"
-  # --- Pass 3: windows (binary is pnpm.exe at the zip root) ---
-  # windows/amd64:
-  #   - "^pnpm-win32-x64\\.zip$"
-  # windows/arm64:
-  #   - "^pnpm-win32-arm64\\.zip$"
+  # darwin: arm64 only — Intel/darwin-x64 was dropped at v11.1.0 (the
+  # versions.min floor), so darwin/amd64 is intentionally not declared.
+  darwin/arm64:
+    - "^pnpm-darwin-arm64\\.tar\\.gz$"
+  # windows: binary is pnpm.exe at the zip root (same PATH=${installPath}).
+  windows/amd64:
+    - "^pnpm-win32-x64\\.zip$"
+  windows/arm64:
+    - "^pnpm-win32-arm64\\.zip$"
 
 asset_type:
   # `archive` auto-detects tar.gz (linux/darwin) and zip (windows); strip 0
@@ -83,17 +80,14 @@ platforms:
     runner: ubuntu-latest
   linux/arm64:
     runner: ubuntu-24.04-arm
-  # --- Pass 2: darwin (Intel slice would run under Rosetta 2 on macos-14;
-  #     pnpm v11 ships arm64 only, so just darwin/arm64). ---
-  # darwin/arm64:
-  #   runner: macos-14
-  # --- Pass 3: windows ---
-  # windows/amd64:
-  #   runner: windows-latest
-  #   shell: pwsh
-  # windows/arm64:
-  #   runner: windows-11-arm
-  #   shell: pwsh
+  darwin/arm64:
+    runner: macos-14
+  windows/amd64:
+    runner: windows-latest
+    shell: pwsh
+  windows/arm64:
+    runner: windows-11-arm
+    shell: pwsh
 
 notify:
   discord:
