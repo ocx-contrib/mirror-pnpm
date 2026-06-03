@@ -1,0 +1,100 @@
+name: pnpm
+target:
+  registry: ocx.sh
+  repository: pnpm
+
+source:
+  type: github_release
+  owner: pnpm
+  repo: pnpm
+  # Tags are vMAJOR.MINOR.PATCH; the anchored \d+ pattern excludes
+  # pre-release tags like v11.0.0-alpha.0 (also gated by skip_prereleases).
+  tag_pattern: "^v(?P<version>\\d+\\.\\d+\\.\\d+)$"
+
+# Pass 1 — Linux only. darwin + windows staged below for Pass 2/3.
+#
+# pnpm v11 ships archives: a `pnpm` binary at the archive ROOT next to a
+# sibling `dist/` directory the binary loads at runtime (the launcher resolves
+# dist/ relative to itself). Both must install together — strip_components: 0
+# unpacks the whole tree into ${installPath}, so PATH=${installPath} exposes
+# `pnpm` and it finds dist/ as a sibling. This is why metadata PATH is
+# ${installPath}, NOT ${installPath}/bin.
+#
+# Linux libc choice — GLIBC, not musl:
+#   pnpm's -musl build is DYNAMICALLY linked against /lib/ld-musl-*.so.1
+#   (NOT static), so it fails on glibc hosts incl. ubuntu-latest runners.
+#   The glibc build runs on every standard distro / CI runner / WSL
+#   (needs libatomic.so.1, present on GitHub ubuntu images).
+assets:
+  linux/amd64:
+    # Anchored tail excludes pnpm-linux-x64-musl.tar.gz and any sidecars.
+    - "^pnpm-linux-x64\\.tar\\.gz$"
+  linux/arm64:
+    - "^pnpm-linux-arm64\\.tar\\.gz$"
+  # --- Pass 2: darwin (arm64 only — Intel/darwin-x64 was dropped at v11.1.0,
+  #     which is why versions.min is 11.1.0; declaring darwin/amd64 would
+  #     silently resolve 0 assets and skip the platform undetected). ---
+  # darwin/arm64:
+  #   - "^pnpm-darwin-arm64\\.tar\\.gz$"
+  # --- Pass 3: windows (binary is pnpm.exe at the zip root) ---
+  # windows/amd64:
+  #   - "^pnpm-win32-x64\\.zip$"
+  # windows/arm64:
+  #   - "^pnpm-win32-arm64\\.zip$"
+
+asset_type:
+  # `archive` auto-detects tar.gz (linux/darwin) and zip (windows); strip 0
+  # because the binary sits at the archive root, not under a wrapper dir.
+  type: archive
+  strip_components: 0
+
+metadata:
+  default: metadata.json
+
+skip_prereleases: true
+cascade: true
+build_timestamp: none
+
+versions:
+  # 11.1.0 floor: v11.0.0 still shipped pnpm-darwin-x64.tar.gz; every release
+  # from 11.1.0 on has a consistent platform set, keeping each declared
+  # platform a 1:1 asset match across the whole range.
+  min: "11.1.0"
+  new_per_run: 10
+  poll_interval: "0 */6 * * *"
+
+verify:
+  github_asset_digest: true
+
+concurrency:
+  max_downloads: 8
+  max_bundles: 4
+  max_pushes: 2
+  rate_limit_ms: 100
+  max_retries: 3
+  compression_threads: 0
+
+tests:
+  - name: smoke
+    script: tests/smoke.star
+
+platforms:
+  linux/amd64:
+    runner: ubuntu-latest
+  linux/arm64:
+    runner: ubuntu-24.04-arm
+  # --- Pass 2: darwin (Intel slice would run under Rosetta 2 on macos-14;
+  #     pnpm v11 ships arm64 only, so just darwin/arm64). ---
+  # darwin/arm64:
+  #   runner: macos-14
+  # --- Pass 3: windows ---
+  # windows/amd64:
+  #   runner: windows-latest
+  #   shell: pwsh
+  # windows/arm64:
+  #   runner: windows-11-arm
+  #   shell: pwsh
+
+notify:
+  discord:
+    webhook_secret: OCX_MIRROR_DISCORD_HOOK
