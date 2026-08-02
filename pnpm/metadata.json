@@ -1,6 +1,7 @@
 {
   "type": "bundle",
   "version": 1,
+  "binaries": ["pnpm"],
   "env": [
     {
       "key": "PATH",
