@@ -75,10 +75,10 @@ source:
 # four Linux keys therefore carry an explicit `+libc.*` feature.
 #
 # ⚠️ The libc key is necessary but NOT SUFFICIENT — pnpm additionally needs
-# libatomic.so.1 (glibc) / libstdc++.so.6 + libgcc_s.so.1 (musl), which no base
-# image ships and `os.features` cannot express. The container legs in
-# ../mirror-base.yml are EXPECTED TO RED on exactly that; the full measured
-# matrix and the reasoning are recorded there.
+# libatomic.so.1 (glibc) / libstdc++.so.6 + libgcc_s.so.1 (musl x64) /
+# libgcc_s.so.1 (musl arm64), which no base image ships and `os.features`
+# cannot express. Each container leg in ../mirror-base.yml installs exactly its
+# gap via `containers[].setup`; the measured matrix is recorded there.
 #
 # ─── Scope (verified against every release in range, v11.1.0 … v11.19.0) ────
 #
