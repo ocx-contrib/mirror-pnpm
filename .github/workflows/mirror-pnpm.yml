@@ -228,22 +228,6 @@ jobs:
               - name: smoke
                 kind: script
                 script: pnpm/tests/smoke.star
-          - platform: linux/arm64+libc.musl
-            platform_slug: linux_arm64_libc.musl
-            runner: ubuntu-24.04-arm
-            container_id: alpine_3_20
-            container_image: "alpine:3.20"
-            container_libc: "musl"
-            docker_platform: "linux/arm64"
-            container_dockerfile: |
-              FROM alpine:3.20
-              SHELL ["sh", "-c"]
-              RUN apk add --no-cache libgcc
-            shell: sh
-            tests:
-              - name: smoke
-                kind: script
-                script: pnpm/tests/smoke.star
           - platform: windows/amd64
             platform_slug: windows_amd64
             runner: windows-latest

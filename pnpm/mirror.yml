@@ -71,14 +71,15 @@ source:
 #
 # Every one carries a PT_INTERP naming its own loader, so NOTHING here is
 # static and no key may be bare: the glibc build needs /lib64/ld-linux-*, the
-# musl build needs /lib/ld-musl-*, and each fails at exec under the other. All
-# four Linux keys therefore carry an explicit `+libc.*` feature.
+# musl build needs /lib/ld-musl-*, and each fails at exec under the other.
+# Every Linux key below therefore carries an explicit `+libc.*` feature.
 #
 # ⚠️ The libc key is necessary but NOT SUFFICIENT — pnpm additionally needs
-# libatomic.so.1 (glibc) / libstdc++.so.6 + libgcc_s.so.1 (musl x64) /
-# libgcc_s.so.1 (musl arm64), which no base image ships and `os.features`
-# cannot express. Each container leg in ../mirror-base.yml installs exactly its
-# gap via `containers[].setup`; the measured matrix is recorded there.
+# libatomic.so.1 (glibc) / libstdc++.so.6 + libgcc_s.so.1 (musl x64), which no
+# base image ships and `os.features` cannot express. Each container leg in
+# ../mirror-base.yml installs exactly its gap via `containers[].setup`; the
+# measured matrix — including the arm64 musl build that is withheld because no
+# setup can make it run — is recorded there.
 #
 # ─── Scope (verified against every release in range, v11.1.0 … v11.19.0) ────
 #
@@ -93,10 +94,13 @@ source:
 # anchored ^…$ regexes are what keep it out. They are also what separates the
 # libc pair: `^pnpm-linux-x64\.tar\.gz$` does NOT match
 # `pnpm-linux-x64-musl.tar.gz`. Resolution verified BOTH ways across ALL 29
-# in-range releases (v11.1.0 … v11.19.0) — each of the seven patterns matches
+# in-range releases (v11.1.0 … v11.19.0) — each of the six patterns matches
 # EXACTLY one asset, and `pnpm-darwin-x64.tar.gz` appears in none of them. A
 # pattern matching zero is silently skipped, not an error; it would yield a
 # green run with a missing platform.
+#
+# TWO upstream assets are intentionally not mirrored: `source-maps.tgz` above,
+# and `pnpm-linux-arm64-musl.tar.gz` (see the comment on its absent key below).
 assets:
   # Quoted — YAML needs it for a key containing `+`.
   "linux/amd64+libc.glibc":
@@ -105,8 +109,10 @@ assets:
     - "^pnpm-linux-x64-musl\\.tar\\.gz$"
   "linux/arm64+libc.glibc":
     - "^pnpm-linux-arm64\\.tar\\.gz$"
-  "linux/arm64+libc.musl":
-    - "^pnpm-linux-arm64-musl\\.tar\\.gz$"
+  # No `linux/arm64+libc.musl`. `pnpm-linux-arm64-musl.tar.gz` exists upstream
+  # and SEGFAULTS on every stock Alpine once its loader gap is closed — the
+  # measurements are in ../mirror-base.yml where the platform key would be.
+  # Deliberately unmirrored, not an oversight.
   darwin/arm64:
     - "^pnpm-darwin-arm64\\.tar\\.gz$"
   windows/amd64:

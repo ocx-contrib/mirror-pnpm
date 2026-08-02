@@ -57,9 +57,10 @@ bin_scan: off
 #
 # `os.features` states what an artifact REQUIRES OF THE HOST — it is not a
 # label for how it was built. Upstream ships a SEPARATE glibc and musl build
-# per Linux arch and NEITHER is static, so neither covers the other and all
-# four Linux keys carry an explicit libc feature. Evidence above
-# pnpm/mirror.yml's `assets:`.
+# per Linux arch and NEITHER is static, so neither covers the other and every
+# Linux key carries an explicit libc feature. Evidence above pnpm/mirror.yml's
+# `assets:`. Three of the four possible Linux keys are declared; the fourth,
+# `linux/arm64+libc.musl`, is withheld — see the block where it would sit.
 #
 # ⚠️ THE LIBC KEY IS NECESSARY BUT NOT SUFFICIENT HERE. pnpm is a Node
 # single-executable-application with a C++ runtime, so it needs shared objects
@@ -131,26 +132,30 @@ platforms:
     # match the platform or the renderer reds the leg up front.
     runner: ubuntu-24.04-arm
     containers: *glibc_containers
-  "linux/arm64+libc.musl":
-    runner: ubuntu-24.04-arm
-    containers:
-      # DIFFERENT gap from amd64 musl — this build static-links libstdc++, so
-      # only the libgcc compiler-runtime helpers are missing. Stock alpine,
-      # verbatim (128-bit integer / soft-float builtins + unwinder):
-      #   Error loading shared library libgcc_s.so.1: No such file or directory
-      #   Error relocating /pkg/pnpm: __udivti3: symbol not found
-      #   Error relocating /pkg/pnpm: __multf3: symbol not found
-      #   Error relocating /pkg/pnpm: _Unwind_GetLanguageSpecificData: symbol not found
-      # Proven by symbol closure, not by execution: musl names all 31 missing
-      # symbols up front, and every one of the 31 is defined in this package's
-      # /usr/lib/libgcc_s.so.1 (`nm -D --defined-only`, versions stripped —
-      # 31/31, none left over). Executing the artifact was not possible off-CI:
-      # a 140 MB Node SEA under qemu-aarch64 does not finish booting. The
-      # arm64 legs run natively on `ubuntu-24.04-arm`, which is the real check.
-      - image: "alpine:3.20"
-        shell: sh
-        setup:
-          - apk add --no-cache libgcc
+  # ─── NO `linux/arm64+libc.musl` — WITHHELD, upstream artifact is broken ────
+  #
+  # Upstream ships `pnpm-linux-arm64-musl.tar.gz`, and it does not run. Its
+  # loader gap IS closable — the build static-links libstdc++ and needs only
+  # libgcc, and `apk add libgcc` resolves all 31 symbols musl reports missing
+  # (verified 31/31 against `nm -D --defined-only /usr/lib/libgcc_s.so.1`) —
+  # but the binary then dies before printing a byte:
+  #
+  #   docker run alpine:3.20 sh -c 'apk add libgcc; pnpm --version'
+  #     → Segmentation fault, rc=139, stderr EMPTY
+  #
+  # Not a library gap and not a mirror defect. Measured 2026-08-02 on v11.18.0:
+  #
+  #   apk add libgcc     → 139   apk add libstdc++ → 139   (superset, no change)
+  #   alpine:3.20 → 139  alpine:3.21 → 139  alpine:3.22 → 139
+  #   native ubuntu-24.04-arm runner in CI → 139, empty stderr (run 30754917384)
+  #   sha256(bundle content/pnpm) == sha256(upstream tarball pnpm)  ← identical
+  #
+  # The amd64 musl build of the same release is green, so this is specific to
+  # the arm64 musl artifact. No `setup:` can fix a crash inside the artifact,
+  # and reaching for a fatter image would only hide it: a user on stock Alpine
+  # arm64 hits exactly this. The key is withheld rather than tested loosely —
+  # which also drops `pnpm-linux-arm64-musl.tar.gz` from the mirrored set. Add
+  # the key back when upstream's arm64 musl build starts.
   darwin/arm64:
     runner: macos-14
     shell: bash
