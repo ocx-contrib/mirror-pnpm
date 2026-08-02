@@ -1,0 +1,148 @@
+# Shared base for every spec in this repository (pnpm).
+#
+# NOT a spec: it has no name/target/source and is never loaded on its own.
+# Everything a package owns — name, target, source, assets, asset_type,
+# metadata, catalog, tests, versions, announce, annotations — stays in that
+# package's own mirror.yml.
+#
+# ⚠️ `extends:` is a SHALLOW merge of top-level keys. A spec that sets a key
+# below replaces that block OUTRIGHT — there is no per-key merge. `platforms:`
+# is where this bites: it carries BOTH the runner matrix and the container
+# legs, so a child that restates it to tweak one runner silently drops every
+# `containers:` entry. Nothing reds — the legs simply stop existing, and every
+# os.features claim in that spec goes back to being merely asserted. Restate
+# `platforms:` IN FULL or not at all.
+
+skip_prereleases: true
+cascade: true
+
+# Carried over from this repository's flat-layout spec unchanged. The fleet
+# rule is `date`; the port is not the place to change publish identity.
+build_timestamp: none
+
+verify:
+  github_asset_digest: true
+
+concurrency:
+  # Assets are ~40 MB .tar.gz / .zip archives around a ~140 MB Node SEA binary
+  # plus its `dist/` tree, so each bundle re-compresses far more than a
+  # single-binary CLI mirror. Carried over unchanged.
+  max_downloads: 8
+  max_bundles: 4
+  max_pushes: 2
+  rate_limit_ms: 100
+  max_retries: 3
+  compression_threads: 0
+
+# `off`, and it cannot be otherwise here. The scan only looks BELOW an
+# interface PATH entry of the form ${installPath}/<dir>. pnpm's archive has no
+# wrapper directory — `pnpm` and its sibling `dist/` sit at the archive ROOT —
+# so `strip_components: 0` makes the content root the interface root and PATH a
+# bare ${installPath}. Measured, not assumed:
+#
+#   $ ocx-mirror package validate pnpm/mirror.yml     # with bin_scan: verify
+#   ERROR invalid mirror spec:
+#     - bin_scan: bin_scan is enabled but metadata.json declares no
+#       interface-visible ${installPath}/<dir> PATH entry — the verification
+#       would inspect no file and pass green whatever the archive contains.
+#   EXIT=65
+#
+# `off` with a hand-listed `binaries` in pnpm/metadata.json is the blessed
+# shape. Pointing PATH at a subdirectory to satisfy the gate is NOT available
+# here: the launcher resolves `dist/` relative to itself, so the two must stay
+# siblings on the same directory PATH names.
+bin_scan: off
+
+# ─── Platform matrix ────────────────────────────────────────────────────────
+#
+# `os.features` states what an artifact REQUIRES OF THE HOST — it is not a
+# label for how it was built. Upstream ships a SEPARATE glibc and musl build
+# per Linux arch and NEITHER is static, so neither covers the other and all
+# four Linux keys carry an explicit libc feature. Evidence above
+# pnpm/mirror.yml's `assets:`.
+#
+# ⚠️ THE LIBC KEY IS NECESSARY BUT NOT SUFFICIENT HERE, AND THE CONTAINER LEGS
+# ARE EXPECTED TO RED. pnpm is a Node single-executable-application with a C++
+# runtime, so it needs shared objects that are NOT part of any base image and
+# that `os.features` has no vocabulary to express:
+#
+#   glibc build → libatomic.so.1  (absent from ubuntu:24.04 AND fedora:40)
+#   musl build  → libstdc++.so.6 + libgcc_s.so.1 (absent from alpine:3.20)
+#
+# Measured on v11.19.0 — the full matrix, including the cells that pass only
+# after a package install:
+#
+#   docker run ubuntu:24.04 <gnu>/pnpm --version
+#     → error while loading shared libraries: libatomic.so.1 (FAIL)
+#   docker run fedora:40    <gnu>/pnpm --version
+#     → error while loading shared libraries: libatomic.so.1 (FAIL)
+#   docker run alpine:3.20  <musl>/pnpm --version
+#     → Error relocating …: _ZSt4cout: symbol not found  (FAIL, libstdc++)
+#   docker run ubuntu:24.04 sh -c 'apt-get install -y libatomic1; <gnu>/pnpm --version'
+#     → 11.19.0 (PASS)
+#   docker run fedora:40    sh -c 'dnf install -y libatomic; <gnu>/pnpm --version'
+#     → 11.19.0 (PASS)
+#   docker run alpine:3.20  sh -c 'apk add libstdc++; <musl>/pnpm --version'
+#     → 11.19.0 (PASS)
+#
+# There is NO spec mechanism to install those packages in a container leg. A
+# `setup:` key on a container entry validates green and is then SILENTLY
+# DROPPED — the schema ignores unknown keys, and the rendered workflow contains
+# no trace of it (verified: a bogus `zzz_bogus_key` validates identically, and
+# `grep -c libatomic1` over every generated workflow returns 0). So the legs
+# below measure the artifact as a consumer on a stock host would meet it, and
+# they red. That is the honest result: pnpm's published Linux builds do not
+# start on a stock ubuntu, fedora or alpine host. Do not weaken the test or
+# drop a platform to make this green — fix belongs upstream (static-link
+# libatomic, or ship the deps).
+#
+# The keys themselves are RIGHT, and the cross-checks prove it — each build
+# fails at exec under the other's loader, so neither could carry a bare key:
+#
+#   docker run alpine:3.20  <gnu>/pnpm  → sh: not found   (no ld-linux)
+#   docker run ubuntu:24.04 <musl>/pnpm → sh: not found   (no ld-musl)
+#
+# Legs follow from what each key CLAIMS: `+libc.glibc` → ubuntu + fedora, NO
+# alpine (a glibc build cannot load under musl, so an alpine leg would red on a
+# correct artifact, and the renderer rejects the mirrored pairing at exit 65).
+# `+libc.musl` → alpine only.
+platforms:
+  "linux/amd64+libc.glibc":
+    runner: ubuntu-latest
+    containers:
+      - { image: "ubuntu:24.04", shell: bash }
+      - { image: "fedora:40",    shell: bash }
+  "linux/amd64+libc.musl":
+    runner: ubuntu-latest
+    containers:
+      - { image: "alpine:3.20", shell: sh }
+  "linux/arm64+libc.glibc":
+    # arm64 container legs run natively — no qemu — so the runner arch must
+    # match the platform or the renderer reds the leg up front.
+    runner: ubuntu-24.04-arm
+    containers:
+      - { image: "ubuntu:24.04", shell: bash }
+      - { image: "fedora:40",    shell: bash }
+  "linux/arm64+libc.musl":
+    runner: ubuntu-24.04-arm
+    containers:
+      - { image: "alpine:3.20", shell: sh }
+  darwin/arm64:
+    runner: macos-14
+    shell: bash
+  # No `darwin/amd64`: upstream dropped `pnpm-darwin-x64.tar.gz` at v11.0.5,
+  # below this spec's 11.1.0 floor. There is no Intel macOS asset to mirror.
+  windows/amd64:
+    runner: windows-latest
+    shell: pwsh
+  windows/arm64:
+    # Native arm64 Windows runner — the amd64 pool cannot execute an ARM64 PE.
+    runner: windows-11-arm
+    shell: pwsh
+  # No `containers:` on darwin or windows — those runners have no Linux
+  # container engine, and the key is rejected at spec load.
+
+notify:
+  discord:
+    webhook_secret: OCX_MIRROR_DISCORD_HOOK
+    user_id: "227748867204972545"  # pinged in-message on failures

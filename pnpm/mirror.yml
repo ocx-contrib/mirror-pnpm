@@ -1,0 +1,153 @@
+extends: ../mirror-base.yml
+
+name: pnpm
+
+# Logical index package `pnpm/pnpm` at the physical path
+# `ghcr.io/ocx-contrib/pnpm/pnpm` — slash segments, never hyphen-flattened. The
+# first segment must be this repo's own GitHub owner: GITHUB_TOKEN only
+# authorises packages owned by the repo the workflow runs in.
+#
+# Tool-as-namespace: upstream's owner IS `pnpm`, so org and tool coincide.
+#
+# Succeeds the flat `ocx.sh/pnpm` coordinate this repository published before
+# the grouped layout.
+target:
+  registry: ghcr.io
+  repository: ocx-contrib/pnpm/pnpm
+
+source:
+  type: github_release
+  owner: pnpm
+  repo: pnpm
+  # Tags are vMAJOR.MINOR.PATCH; the anchored \d+ pattern excludes pre-release
+  # tags like v12.0.0-beta.3 (also gated by skip_prereleases) and the
+  # separately-versioned `pnpr@0.1.0-alpha.5` line.
+  tag_pattern: "^v(?P<version>\\d+\\.\\d+\\.\\d+)$"
+
+# ─── Archive layout ─────────────────────────────────────────────────────────
+#
+# The archive has NO wrapper directory. Measured on v11.19.0 and on v11.1.0
+# (the floor), identically:
+#
+#   $ tar tzf pnpm-linux-x64.tar.gz | head -3
+#   pnpm
+#   dist/
+#   dist/node-gyp-bin/
+#
+# `pnpm` is a ~140 MB Node single-executable-application at the ROOT, and the
+# launcher resolves its `dist/` tree RELATIVE TO ITSELF. The two must install
+# as siblings, so `strip_components: 0` unpacks the whole tree into
+# ${installPath} and metadata PATH is a bare ${installPath} — NOT
+# ${installPath}/bin, which would break the dist/ lookup. That bare PATH is
+# also why ../mirror-base.yml must set `bin_scan: off`; see the comment there.
+#
+# ─── libc gate (Phase 3.5) — the evidence, not the conclusion ───────────────
+#
+# Upstream ships a separate glibc and musl build per Linux arch. Measured on
+# v11.19.0:
+#
+#   $ file pnpm-linux-x64/pnpm
+#   ELF 64-bit LSB executable, x86-64, dynamically linked,
+#     interpreter /lib64/ld-linux-x86-64.so.2, for GNU/Linux 3.2.0
+#   $ readelf -d … | grep NEEDED
+#   libatomic.so.1 libdl.so.2 libm.so.6 libstdc++.so.6 libgcc_s.so.1
+#   libpthread.so.0 libc.so.6 ld-linux-x86-64.so.2
+#
+#   $ file pnpm-linux-arm64/pnpm
+#   ELF 64-bit LSB executable, ARM aarch64, dynamically linked,
+#     interpreter /lib/ld-linux-aarch64.so.1, for GNU/Linux 3.7.0
+#   $ readelf -d … | grep NEEDED       → same set, ld-linux-aarch64.so.1
+#
+#   $ file pnpm-linux-x64-musl/pnpm
+#   ELF 64-bit LSB pie executable, x86-64, dynamically linked,
+#     interpreter /lib/ld-musl-x86_64.so.1
+#   $ readelf -d … | grep NEEDED
+#   libstdc++.so.6 libgcc_s.so.1 libc.musl-x86_64.so.1
+#
+#   $ file pnpm-linux-arm64-musl/pnpm
+#   ELF 64-bit LSB executable, ARM aarch64, dynamically linked,
+#     interpreter /lib/ld-musl-aarch64.so.1
+#   $ readelf -d … | grep NEEDED       → libgcc_s.so.1, libc.so
+#
+# Every one carries a PT_INTERP naming its own loader, so NOTHING here is
+# static and no key may be bare: the glibc build needs /lib64/ld-linux-*, the
+# musl build needs /lib/ld-musl-*, and each fails at exec under the other. All
+# four Linux keys therefore carry an explicit `+libc.*` feature.
+#
+# ⚠️ The libc key is necessary but NOT SUFFICIENT — pnpm additionally needs
+# libatomic.so.1 (glibc) / libstdc++.so.6 + libgcc_s.so.1 (musl), which no base
+# image ships and `os.features` cannot express. The container legs in
+# ../mirror-base.yml are EXPECTED TO RED on exactly that; the full measured
+# matrix and the reasoning are recorded there.
+#
+# ─── Scope (verified against every release in range, v11.1.0 … v11.19.0) ────
+#
+# Upstream's release asset set has been identical in SHAPE since v11.0.5:
+#
+#   pnpm-darwin-arm64.tar.gz     pnpm-linux-arm64.tar.gz
+#   pnpm-linux-x64.tar.gz        pnpm-linux-arm64-musl.tar.gz
+#   pnpm-linux-x64-musl.tar.gz   pnpm-win32-x64.zip
+#   pnpm-win32-arm64.zip         source-maps.tgz
+#
+# `source-maps.tgz` is a debug sidecar and is deliberately not carried; the
+# anchored ^…$ regexes are what keep it out. They are also what separates the
+# libc pair: `^pnpm-linux-x64\.tar\.gz$` does NOT match
+# `pnpm-linux-x64-musl.tar.gz`. Resolution verified BOTH ways across ALL 30
+# in-range releases — each of the seven patterns matches EXACTLY one asset. A
+# pattern matching zero is silently skipped, not an error; it would yield a
+# green run with a missing platform.
+assets:
+  # Quoted — YAML needs it for a key containing `+`.
+  "linux/amd64+libc.glibc":
+    - "^pnpm-linux-x64\\.tar\\.gz$"
+  "linux/amd64+libc.musl":
+    - "^pnpm-linux-x64-musl\\.tar\\.gz$"
+  "linux/arm64+libc.glibc":
+    - "^pnpm-linux-arm64\\.tar\\.gz$"
+  "linux/arm64+libc.musl":
+    - "^pnpm-linux-arm64-musl\\.tar\\.gz$"
+  darwin/arm64:
+    - "^pnpm-darwin-arm64\\.tar\\.gz$"
+  windows/amd64:
+    - "^pnpm-win32-x64\\.zip$"
+  windows/arm64:
+    - "^pnpm-win32-arm64\\.zip$"
+
+asset_type:
+  # `archive` auto-detects .tar.gz (linux/darwin) and .zip (windows). Strip 0
+  # because there is no wrapper directory to strip — see the layout evidence
+  # above. Windows ships `pnpm.exe` + `dist/` at the zip root, same shape.
+  type: archive
+  strip_components: 0
+
+metadata:
+  default: metadata.json
+
+catalog:
+  logo: logo.svg
+
+versions:
+  # 11.1.0 floor: v11.0.0–v11.0.4 still shipped pnpm-darwin-x64.tar.gz, and
+  # this spec declares no darwin/amd64 — carrying them would leave that asset
+  # unmirrored while the platform set silently differed across the range.
+  min: "11.1.0"
+  new_per_run: 10
+  poll_interval: "0 */6 * * *"
+
+tests:
+  # `script:` resolves from the REPOSITORY ROOT — unlike `metadata.default` and
+  # `catalog.logo` above, which resolve against this spec's own directory.
+  - name: smoke
+    script: pnpm/tests/smoke.star
+
+annotations:
+  # From the Phase 1.5 license gate:
+  #   $ gh api repos/pnpm/pnpm/license --jq '.license.spdx_id'
+  #   MIT
+  org.opencontainers.image.licenses: "MIT"
+
+announce:
+  # Spelled out, not derived from target.repository — the logical name and the
+  # physical path are related by convention only.
+  package: pnpm/pnpm
+  fork: ocx-contrib/index
