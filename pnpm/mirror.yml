@@ -92,8 +92,9 @@ source:
 # `source-maps.tgz` is a debug sidecar and is deliberately not carried; the
 # anchored ^…$ regexes are what keep it out. They are also what separates the
 # libc pair: `^pnpm-linux-x64\.tar\.gz$` does NOT match
-# `pnpm-linux-x64-musl.tar.gz`. Resolution verified BOTH ways across ALL 30
-# in-range releases — each of the seven patterns matches EXACTLY one asset. A
+# `pnpm-linux-x64-musl.tar.gz`. Resolution verified BOTH ways across ALL 29
+# in-range releases (v11.1.0 … v11.19.0) — each of the seven patterns matches
+# EXACTLY one asset, and `pnpm-darwin-x64.tar.gz` appears in none of them. A
 # pattern matching zero is silently skipped, not an error; it would yield a
 # green run with a missing platform.
 assets:
