@@ -6,7 +6,7 @@ name: pnpm
 
 on:
   schedule:
-    - cron: '0 */6 * * *'
+    - cron: '35 4-23/6 * * *'
   workflow_dispatch:
   push:
     branches: [main]

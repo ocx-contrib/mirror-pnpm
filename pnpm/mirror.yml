@@ -139,7 +139,7 @@ versions:
   # unmirrored while the platform set silently differed across the range.
   min: "11.1.0"
   new_per_run: 10
-  poll_interval: "0 */6 * * *"
+  poll_interval: "35 4-23/6 * * *"
 
 tests:
   # `script:` resolves from the REPOSITORY ROOT — unlike `metadata.default` and
