@@ -123,10 +123,12 @@ platforms:
       #   Error relocating /pkg/pnpm: _ZNSt5ctypeIcE2idE: symbol not found
       # `apk add libstdc++` pulls libgcc as a dependency, covering both NEEDED
       # entries in one line. → 11.18.0.
+      # 11.28.8 adds a libatomic NEEDED entry, same as the glibc build:
+      #   Error loading shared library libatomic.so.1: No such file or directory
       - image: "alpine:3.20"
         shell: sh
         setup:
-          - apk add --no-cache libstdc++
+          - apk add --no-cache libstdc++ libatomic
   "linux/arm64+libc.glibc":
     # arm64 container legs run natively — no qemu — so the runner arch must
     # match the platform or the renderer reds the leg up front.
