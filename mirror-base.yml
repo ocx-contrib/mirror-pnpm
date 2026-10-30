@@ -159,7 +159,7 @@ platforms:
   # which also drops `pnpm-linux-arm64-musl.tar.gz` from the mirrored set. Add
   # the key back when upstream's arm64 musl build starts.
   darwin/arm64:
-    runner: macos-14
+    runner: macos-15
     shell: bash
   # No `darwin/amd64`: upstream dropped `pnpm-darwin-x64.tar.gz` at v11.0.5,
   # below this spec's 11.1.0 floor. There is no Intel macOS asset to mirror.
